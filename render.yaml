@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: forumcraft
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node src/register-commands.js && node src/index.js
+    envVars:
+      - key: DISCORD_TOKEN
+        sync: false
+      - key: CLIENT_ID
+        sync: false

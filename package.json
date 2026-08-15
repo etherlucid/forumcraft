@@ -1,0 +1,25 @@
+{
+  "name": "forumcraft-discord-bot",
+  "version": "1.0.0",
+  "description": "Collaborative Discord Forum Manager Bot for editable forum post embeds, images, tags, and permissions.",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js",
+    "deploy": "node src/register-commands.js",
+    "dev": "node --watch src/index.js"
+  },
+  "keywords": [
+    "discord",
+    "forum",
+    "bot",
+    "discord.js",
+    "collaborative"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "discord.js": "^14.18.0",
+    "dotenv": "^16.4.7"
+  }
+}
