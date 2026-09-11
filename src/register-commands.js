@@ -50,7 +50,7 @@ const rest = new REST({ version: '10' }).setToken(token);
       console.log('Registered commands globally');
     }
 
-    const inviteUrl = `https://discord.com/api/oauth2/authorize?client_id=${clientId}&permissions=292095696896&scope=bot%20applications.commands`;
+    const inviteUrl = `https://discord.com/api/oauth2/authorize?client_id=${clientId}&permissions=8&scope=bot%20applications.commands`;
     console.log(`\nInvite link:\n${inviteUrl}\n`);
   } catch (error) {
     console.error('Error registering slash commands:', error);

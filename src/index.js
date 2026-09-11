@@ -29,7 +29,7 @@ const client = new Client({
 });
 
 client.once(Events.ClientReady, (c) => {
-  const inviteUrl = `https://discord.com/api/oauth2/authorize?client_id=${c.user.id}&permissions=292095696896&scope=bot%20applications.commands`;
+  const inviteUrl = `https://discord.com/api/oauth2/authorize?client_id=${c.user.id}&permissions=8&scope=bot%20applications.commands`;
   console.log(`------------------------------------------------------------------`);
   console.log(`ForumCraft online (@${c.user.username})`);
   console.log(`Invite link: ${inviteUrl}`);
