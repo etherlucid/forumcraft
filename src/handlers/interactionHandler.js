@@ -10,7 +10,7 @@ import {
   MessageFlags
 } from 'discord.js';
 import { db } from '../utils/db.js';
-import { createForumCanvasEmbed, createActionRow, createTagSelectMenu, createPanelComponents } from '../utils/embeds.js';
+import { createForumCanvasEmbed, createActionRow, createPanelComponents } from '../utils/embeds.js';
 
 export function canUserEditPost(member, thread, postData) {
   if (!member) return false;
@@ -38,7 +38,7 @@ export async function updatePostCanvas(thread, postData, updatedByUser = null) {
   const actionRow = createActionRow();
 
   const starterContent = postData.description?.trim() 
-    ? (postData.description.length > 500 ? postData.description.slice(0, 497) + '...' : postData.description)
+    ? (postData.description.length > 2000 ? postData.description.slice(0, 1997) + '...' : postData.description)
     : '*No description added yet.*';
 
   try {
@@ -230,33 +230,20 @@ async function handleChatInputCommand(interaction) {
   }
 
   if (subcommand === 'text' || subcommand === 'content') {
-    const newTitle = options.getString('title');
     const newDesc = options.getString('description');
 
-    if (!newTitle && !newDesc) {
-      return showEditContentModal(interaction, postData);
+    if (!newDesc) {
+      return showEditContentModal(interaction, postData, channel);
     }
 
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-    if (newTitle) {
-      postData.title = newTitle;
-      await channel.setName(newTitle).catch(() => {});
-    }
-    if (newDesc) postData.description = newDesc;
+    postData.description = newDesc;
 
     db.savePost(channel.id, postData);
     await updatePostCanvas(channel, postData, user);
 
     await interaction.deleteReply().catch(() => {});
     return;
-  }
-
-  if (subcommand === 'tags') {
-    const tagMenuRow = createTagSelectMenu(channel);
-    if (!tagMenuRow) {
-      return interaction.reply({ content: 'No tags available in this forum channel.', flags: MessageFlags.Ephemeral });
-    }
-    return interaction.reply({ content: 'Select tags:', components: [tagMenuRow], flags: MessageFlags.Ephemeral });
   }
 }
 
@@ -407,13 +394,7 @@ async function handleButtonInteraction(interaction) {
     return;
   }
 
-  if (customId === 'btn_edit_tags') {
-    const tagMenuRow = createTagSelectMenu(channel);
-    if (!tagMenuRow) {
-      return interaction.reply({ content: 'No tags available in this forum channel.', flags: MessageFlags.Ephemeral });
-    }
-    return interaction.reply({ content: 'Select tags:', components: [tagMenuRow], flags: MessageFlags.Ephemeral });
-  }
+
 }
 
 // ----------------------------------------------------
@@ -472,13 +453,8 @@ async function handleModalSubmit(interaction) {
     }
 
     if (customId.startsWith('modal_edit_content')) {
-      const newTitle = interaction.fields.getTextInputValue('title_input')?.trim();
       const newDesc = interaction.fields.getTextInputValue('desc_input')?.trim();
 
-      if (newTitle && newTitle !== channel.name) {
-        postData.title = newTitle;
-        await channel.setName(newTitle).catch(() => {});
-      }
       postData.description = newDesc || '';
 
       db.savePost(channel.id, postData);
@@ -494,32 +470,7 @@ async function handleModalSubmit(interaction) {
 // 4. SELECT MENU HANDLERS (TAGS)
 // ----------------------------------------------------
 async function handleSelectMenuInteraction(interaction) {
-  const { customId, channel, values, user } = interaction;
-  if (!channel.isThread()) return;
-
-  if (customId === 'select_forum_tags') {
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-
-    try {
-      await channel.setAppliedTags(values);
-    } catch (err) {
-      console.error('Failed to set applied tags:', err);
-      return interaction.editReply({ content: 'Needs Manage Threads permission to set tags.' });
-    }
-
-    let postData = db.getPost(channel.id) || {
-      threadId: channel.id,
-      authorId: channel.ownerId,
-      title: channel.name,
-      description: '',
-      imageUrl: null
-    };
-
-    await updatePostCanvas(channel, postData, user);
-
-    await interaction.deleteReply().catch(() => {});
-    return;
-  }
+  return;
 }
 
 export async function createBotOwnedForumThread(forumChannel, postData, originalAuthor) {
@@ -535,7 +486,7 @@ export async function createBotOwnedForumThread(forumChannel, postData, original
   const actionRow = createActionRow();
 
   const starterContent = postData.description?.trim() 
-    ? (postData.description.length > 500 ? postData.description.slice(0, 497) + '...' : postData.description)
+    ? (postData.description.length > 2000 ? postData.description.slice(0, 1997) + '...' : postData.description)
     : '*No description added yet.*';
 
   const thread = await forumChannel.threads.create({
@@ -586,21 +537,11 @@ async function showEditContentModal(interaction, postData, channel = null) {
 
   const modal = new ModalBuilder()
     .setCustomId(`modal_edit_content_${threadId}`)
-    .setTitle('Edit Title & Text');
-
-  const titleValue = channel?.name || interaction.channel?.name || postData.title || '';
-
-  const titleInput = new TextInputBuilder()
-    .setCustomId('title_input')
-    .setLabel('Title')
-    .setStyle(TextInputStyle.Short)
-    .setValue(titleValue)
-    .setMaxLength(100)
-    .setRequired(true);
+    .setTitle('Edit Post Text');
 
   const descInput = new TextInputBuilder()
     .setCustomId('desc_input')
-    .setLabel('Text')
+    .setLabel('Text / Details')
     .setStyle(TextInputStyle.Paragraph)
     .setPlaceholder('Enter description...')
     .setValue(initialDesc)
@@ -608,7 +549,6 @@ async function showEditContentModal(interaction, postData, channel = null) {
     .setRequired(false);
 
   modal.addComponents(
-    new ActionRowBuilder().addComponents(titleInput),
     new ActionRowBuilder().addComponents(descInput)
   );
 

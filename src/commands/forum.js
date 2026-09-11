@@ -78,24 +78,13 @@ export const commandData = new SlashCommandBuilder()
   .addSubcommand(sub =>
     sub
       .setName('text')
-      .setDescription('Update title and text')
-      .addStringOption(opt =>
-        opt
-          .setName('title')
-          .setDescription('New title')
-          .setRequired(false)
-      )
+      .setDescription('Update post text')
       .addStringOption(opt =>
         opt
           .setName('description')
           .setDescription('New description or text')
           .setRequired(false)
       )
-  )
-  .addSubcommand(sub =>
-    sub
-      .setName('tags')
-      .setDescription('Select tags for this post')
   )
   .addSubcommand(sub =>
     sub
