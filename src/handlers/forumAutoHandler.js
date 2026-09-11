@@ -4,11 +4,18 @@ import { createBotOwnedForumThread } from './interactionHandler.js';
 
 export async function handleThreadCreate(thread) {
   try {
-    if (!thread.parent || thread.parent.type !== ChannelType.GuildForum) {
+    if (!thread) return;
+
+    if (thread.ownerId === thread.client.user.id) {
       return;
     }
 
-    if (thread.ownerId === thread.client.user.id) {
+    let forumChannel = thread.parent;
+    if (!forumChannel && thread.parentId && thread.guild) {
+      forumChannel = await thread.guild.channels.fetch(thread.parentId).catch(() => null);
+    }
+
+    if (!forumChannel || forumChannel.type !== ChannelType.GuildForum) {
       return;
     }
 
@@ -58,7 +65,6 @@ export async function handleThreadCreate(thread) {
       originalAuthorId: thread.ownerId
     };
 
-    const forumChannel = thread.parent;
     const authorUser = member?.user || { id: thread.ownerId, username: 'User' };
 
     await createBotOwnedForumThread(forumChannel, postData, authorUser);

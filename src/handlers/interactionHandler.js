@@ -15,19 +15,18 @@ import { createForumCanvasEmbed, createActionRow, createTagSelectMenu, createPan
 export function canUserEditPost(member, thread, postData) {
   if (!member) return false;
 
-  if (member.permissions.has(PermissionFlagsBits.Administrator) || member.permissions.has(PermissionFlagsBits.ManageThreads)) {
+  if (member.permissions?.has(PermissionFlagsBits.Administrator) || member.permissions?.has(PermissionFlagsBits.ManageThreads)) {
     return true;
   }
 
-  if (postData?.originalAuthorId && member.id === postData.originalAuthorId) {
-    return true;
-  }
-  if (thread.ownerId && member.id === thread.ownerId) {
+  const authorId = postData?.originalAuthorId || postData?.authorId || thread?.ownerId;
+  if (authorId && member.id === authorId) {
     return true;
   }
 
-  const config = db.getConfig(thread.guild.id);
-  if (config.editorRoleId && member.roles.cache.has(config.editorRoleId)) {
+  const guildId = member.guild?.id || thread?.guild?.id;
+  const config = guildId ? db.getConfig(guildId) : { editorRoleId: null };
+  if (config.editorRoleId && member.roles?.cache?.has(config.editorRoleId)) {
     return true;
   }
 
@@ -101,13 +100,25 @@ export async function handleInteraction(interaction) {
     }
   } catch (error) {
     console.error('Error handling interaction:', error);
-    const replyOptions = { content: 'Something went wrong. Try again in a second.', flags: MessageFlags.Ephemeral };
+    let errorMsg = 'Something went wrong. Try again in a second.';
+    if (error.code === 50001 || error.code === 50013) {
+      errorMsg = '⚠️ **Bot Missing Permissions**: Please make sure the bot role has **View Channel**, **Send Messages in Threads**, and **Manage Threads** permissions in this private category/channel.';
+    }
+    const replyOptions = { content: errorMsg, flags: MessageFlags.Ephemeral };
     if (interaction.deferred || interaction.replied) {
       await interaction.followUp(replyOptions).catch(() => {});
     } else {
       await interaction.reply(replyOptions).catch(() => {});
     }
   }
+}
+
+async function resolveInteractionChannel(interaction) {
+  if (interaction.channel) return interaction.channel;
+  if (interaction.channelId && interaction.guild) {
+    return await interaction.guild.channels.fetch(interaction.channelId).catch(() => null);
+  }
+  return null;
 }
 
 // ----------------------------------------------------
@@ -253,7 +264,7 @@ async function handleChatInputCommand(interaction) {
 // 2. BUTTON INTERACTIONS
 // ----------------------------------------------------
 async function handleButtonInteraction(interaction) {
-  const { customId, channel, member, user } = interaction;
+  const { customId, member, user, channelId } = interaction;
 
   if (customId.startsWith('btn_create_post_')) {
     const forumChannelId = customId.replace('btn_create_post_', '');
@@ -291,11 +302,28 @@ async function handleButtonInteraction(interaction) {
     return interaction.showModal(modal);
   }
 
-  if (!channel.isThread()) return;
+  if (customId === 'btn_edit_content') {
+    let postData = db.getPost(channelId) || {
+      threadId: channelId,
+      originalAuthorId: null,
+      title: '',
+      description: '',
+      imageUrl: null
+    };
+
+    if (!canUserEditPost(member, interaction.channel, postData)) {
+      return interaction.reply({ content: 'Only the post creator or editors can edit this post.', flags: MessageFlags.Ephemeral });
+    }
+
+    return await showEditContentModal(interaction, postData, interaction.channel);
+  }
+
+  const channel = await resolveInteractionChannel(interaction);
+  if (!channel || !channel.isThread()) return;
 
   let postData = db.getPost(channel.id) || {
     threadId: channel.id,
-    authorId: channel.ownerId,
+    originalAuthorId: channel.ownerId,
     title: channel.name,
     description: '',
     imageUrl: null
@@ -379,10 +407,6 @@ async function handleButtonInteraction(interaction) {
     return;
   }
 
-  if (customId === 'btn_edit_content') {
-    return showEditContentModal(interaction, postData);
-  }
-
   if (customId === 'btn_edit_tags') {
     const tagMenuRow = createTagSelectMenu(channel);
     if (!tagMenuRow) {
@@ -396,17 +420,17 @@ async function handleButtonInteraction(interaction) {
 // 3. MODAL SUBMIT HANDLERS
 // ----------------------------------------------------
 async function handleModalSubmit(interaction) {
-  const { customId, channel, user, guild } = interaction;
+  const { customId, user, guild } = interaction;
 
   if (customId.startsWith('modal_create_post_')) {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
     const forumChannelId = customId.replace('modal_create_post_', '');
     const forumChannel = await guild.channels.fetch(forumChannelId);
 
     const title = interaction.fields.getTextInputValue('post_title')?.trim();
     const imageUrl = interaction.fields.getTextInputValue('post_image_url')?.trim() || null;
     const description = interaction.fields.getTextInputValue('post_description')?.trim() || '';
-
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
     const postData = {
       title,
@@ -420,44 +444,49 @@ async function handleModalSubmit(interaction) {
     return;
   }
 
-  if (!channel.isThread()) return;
-
-  let postData = db.getPost(channel.id) || {
-    threadId: channel.id,
-    authorId: channel.ownerId,
-    title: channel.name,
-    description: '',
-    imageUrl: null
-  };
-
-  if (customId === 'modal_change_image') {
-    const newUrl = interaction.fields.getTextInputValue('image_url_input')?.trim();
-    postData.imageUrl = newUrl || null;
-
-    db.savePost(channel.id, postData);
+  if (customId === 'modal_change_image' || customId.startsWith('modal_edit_content')) {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-    await updatePostCanvas(channel, postData, user);
 
-    await interaction.deleteReply().catch(() => {});
-    return;
-  }
-
-  if (customId === 'modal_edit_content') {
-    const newTitle = interaction.fields.getTextInputValue('title_input')?.trim();
-    const newDesc = interaction.fields.getTextInputValue('desc_input')?.trim();
-
-    if (newTitle && newTitle !== channel.name) {
-      postData.title = newTitle;
-      await channel.setName(newTitle).catch(() => {});
+    const channel = await resolveInteractionChannel(interaction);
+    if (!channel || !channel.isThread()) {
+      return interaction.editReply({ content: 'Thread channel not found.' });
     }
-    postData.description = newDesc || '';
 
-    db.savePost(channel.id, postData);
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-    await updatePostCanvas(channel, postData, user);
+    let postData = db.getPost(channel.id) || {
+      threadId: channel.id,
+      originalAuthorId: channel.ownerId,
+      title: channel.name,
+      description: '',
+      imageUrl: null
+    };
 
-    await interaction.deleteReply().catch(() => {});
-    return;
+    if (customId === 'modal_change_image') {
+      const newUrl = interaction.fields.getTextInputValue('image_url_input')?.trim();
+      postData.imageUrl = newUrl || null;
+
+      db.savePost(channel.id, postData);
+      await updatePostCanvas(channel, postData, user);
+
+      await interaction.deleteReply().catch(() => {});
+      return;
+    }
+
+    if (customId.startsWith('modal_edit_content')) {
+      const newTitle = interaction.fields.getTextInputValue('title_input')?.trim();
+      const newDesc = interaction.fields.getTextInputValue('desc_input')?.trim();
+
+      if (newTitle && newTitle !== channel.name) {
+        postData.title = newTitle;
+        await channel.setName(newTitle).catch(() => {});
+      }
+      postData.description = newDesc || '';
+
+      db.savePost(channel.id, postData);
+      await updatePostCanvas(channel, postData, user);
+
+      await interaction.deleteReply().catch(() => {});
+      return;
+    }
   }
 }
 
@@ -540,16 +569,32 @@ export async function createBotOwnedForumThread(forumChannel, postData, original
   return thread;
 }
 
-function showEditContentModal(interaction, postData) {
+async function showEditContentModal(interaction, postData, channel = null) {
+  const threadId = channel?.id || interaction.channelId;
+
+  let initialDesc = postData.description || '';
+  if (!initialDesc && channel) {
+    const starterMsg = await channel.fetchStarterMessage().catch(() => null);
+    if (starterMsg) {
+      if (starterMsg.embeds?.[0]?.description) {
+        initialDesc = starterMsg.embeds[0].description;
+      } else if (starterMsg.content && !starterMsg.content.startsWith('*No description')) {
+        initialDesc = starterMsg.content;
+      }
+    }
+  }
+
   const modal = new ModalBuilder()
-    .setCustomId('modal_edit_content')
+    .setCustomId(`modal_edit_content_${threadId}`)
     .setTitle('Edit Title & Text');
+
+  const titleValue = postData.title || channel?.name || interaction.channel?.name || '';
 
   const titleInput = new TextInputBuilder()
     .setCustomId('title_input')
     .setLabel('Title')
     .setStyle(TextInputStyle.Short)
-    .setValue(postData.title || interaction.channel.name || '')
+    .setValue(titleValue)
     .setMaxLength(100)
     .setRequired(true);
 
@@ -558,7 +603,7 @@ function showEditContentModal(interaction, postData) {
     .setLabel('Text')
     .setStyle(TextInputStyle.Paragraph)
     .setPlaceholder('Enter description...')
-    .setValue(postData.description || '')
+    .setValue(initialDesc)
     .setMaxLength(4000)
     .setRequired(false);
 
