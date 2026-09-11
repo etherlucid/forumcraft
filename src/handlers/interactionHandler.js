@@ -588,7 +588,7 @@ async function showEditContentModal(interaction, postData, channel = null) {
     .setCustomId(`modal_edit_content_${threadId}`)
     .setTitle('Edit Title & Text');
 
-  const titleValue = postData.title || channel?.name || interaction.channel?.name || '';
+  const titleValue = channel?.name || interaction.channel?.name || postData.title || '';
 
   const titleInput = new TextInputBuilder()
     .setCustomId('title_input')
