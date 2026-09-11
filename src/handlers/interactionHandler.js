@@ -61,6 +61,9 @@ export async function updatePostCanvas(thread, postData, updatedByUser = null) {
         components: [actionRow],
         allowedMentions: { users: [] }
       });
+      if (!starterMsg.pinned) {
+        try { await starterMsg.pin(); } catch (e) {}
+      }
       db.savePost(thread.id, { starterMessageId: starterMsg.id });
       return starterMsg;
     }
@@ -518,6 +521,13 @@ export async function createBotOwnedForumThread(forumChannel, postData, original
   });
 
   const starterMessage = await thread.fetchStarterMessage().catch(() => null);
+  if (starterMessage) {
+    try {
+      await starterMessage.pin();
+    } catch (err) {
+      console.error('Failed to pin starter message:', err);
+    }
+  }
 
   const finalPostData = {
     ...postData,
